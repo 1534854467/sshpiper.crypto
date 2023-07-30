@@ -193,6 +193,7 @@ func (p *PiperConn) authUpstream(downstream ConnMetadata, method string, upstrea
 func (p *PiperConn) noClientAuthCallback(conn ConnMetadata) (*Permissions, error) {
 	u, err := p.config.NoClientAuthCallback(conn, p.challengeCtx)
 	if err != nil {
+		p.processUpstreamError(err)
 		p.updateAuthMethods()
 		return nil, err
 	}
@@ -203,6 +204,7 @@ func (p *PiperConn) noClientAuthCallback(conn ConnMetadata) (*Permissions, error
 func (p *PiperConn) passwordCallback(conn ConnMetadata, password []byte) (*Permissions, error) {
 	u, err := p.config.PasswordCallback(conn, password, p.challengeCtx)
 	if err != nil {
+		p.processUpstreamError(err)
 		p.updateAuthMethods()
 		return nil, err
 	}
@@ -213,6 +215,7 @@ func (p *PiperConn) passwordCallback(conn ConnMetadata, password []byte) (*Permi
 func (p *PiperConn) publicKeyCallback(conn ConnMetadata, key PublicKey) (*Permissions, error) {
 	u, err := p.config.PublicKeyCallback(conn, key, p.challengeCtx)
 	if err != nil {
+		p.processUpstreamError(err)
 		p.updateAuthMethods()
 		return nil, err
 	}
@@ -223,6 +226,7 @@ func (p *PiperConn) publicKeyCallback(conn ConnMetadata, key PublicKey) (*Permis
 func (p *PiperConn) keyboardInteractiveCallback(conn ConnMetadata, client KeyboardInteractiveChallenge) (*Permissions, error) {
 	u, err := p.config.KeyboardInteractiveCallback(conn, client, p.challengeCtx)
 	if err != nil {
+		p.processUpstreamError(err)
 		p.updateAuthMethods()
 		return nil, err
 	}
@@ -272,6 +276,21 @@ func (p *PiperConn) updateAuthMethods() error {
 	}
 
 	return nil
+}
+
+func (p *PiperConn) processUpstreamError(e error) error {
+	// send disconnect message when got network error
+	if _, ok := e.(net.Error); ok {
+		// See RFC 4253, section 11.1.
+		if err := p.downstream.transport.writePacket(Marshal(&disconnectMsg{
+			Reason:  7,
+			Message: e.Error(),
+		})); err != nil {
+			return err
+		}
+	}
+
+	return e
 }
 
 // NewSSHPiperConn starts a piped ssh connection witch conn as its downstream transport.
